@@ -1,0 +1,331 @@
+---
+title: "lab02-block02"
+author: "Mohammed Bakheet"
+date: "15/12/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+RNGversion('3.5.1')
+knitr::opts_chunk$set(echo = TRUE)
+packages <- c("ggplot2", "plotly","readxl","tree", "MASS", "e1071", "boot", "fastICA","mgcv","akima","plotly","stats","kernlab","pamr","glmnet")
+options(tinytex.verbose = TRUE)
+```
+
+# Assignment 1. Using GAM and GLM to examine the mortality rates
+
+```{r 1, echo=F, include=FALSE, warning=FALSE}
+library(mgcv)
+library(akima)
+library(plotly)
+library(readxl)
+data = read_excel("D:/Desktop/Machine Learning/Machine Learning/lab02 block 2/influenza.xlsx")
+set.seed(12345)
+```
+
+
+#1.1) plotting influenza vs mortality and time
+
+```{r plotting_infvsmort}
+ggplot(data = data)+geom_point(aes(data$Time, y = data$Mortality))+geom_point(aes(x = data$Time, y = data$Influenza))+ggtitle("Influenza vs Mortaltity and Time")
+```
+
+#The plot shows the realation between mortality and influenza with respect to time, it's clear that mortality rate increases as the influenza rate increases over time, So they do have a positive relationship.  
+
+
+#1.2) 
+
+```{r 1.2, echo=F}
+
+res=gam(Mortality~Year+s(Week, 
+                         k=length(unique(data$Week))),
+                         data=data, method = "GCV.Cp")
+
+          s=interp(data$Year,data$Week, fitted(res), duplicate = TRUE)
+          print(res)
+          summary(res)
+    
+```
+
+```{r plotting_mortalityvsyear}
+          plot(res)
+        
+
+```
+
+#1.3)
+
+```{r ,echo=F}
+          modelPrediction <- predict(res,newdata = data)
+```
+
+```{r plotting_model_prediction}
+         ggplot(data)+geom_line(aes(x = Time, y = data$Mortality, col = "Mortality (Observed)"))+ggtitle("Fitted vs Observed Mortality ")+
+            geom_line(aes(x= Time, y = modelPrediction, col = "Mortality (Fitted)"))+ylab("Mortality Rate")
+```
+
+#The model doesn't cover all data, and the trend appears to be the same for all years, this could be clearly seen in the graph. We could, therefore, conclude that the model is not the best fit.
+         
+#1.4) 
+
+```{r model_with_no_deviance, echo=F}
+          modelWithNoDeviance=gam(Mortality~Year+s(Week, 
+                         k=length(unique(data$Week)), sp=0.002),
+                         data = data)
+  modelWithNoDeviance2=gam(Mortality~Year+s(Week, 
+                         k=length(unique(data$Week)), sp=10),
+                         data = data)
+  firstModel <- predict(modelWithNoDeviance)
+  secondModel <- predict(modelWithNoDeviance2)
+```
+
+
+
+```{r , echo=F}
+         ggplot(data)+geom_line(aes(x = Time, y = firstModel, col = "low penalty factor"))+ggtitle("Using Different Penalty Factors")+
+            geom_line(aes(x= Time, y = secondModel, col = "high penalty factor"))+ylab("Mortality Rate")+geom_point(aes(x = Time, y = data$Mortality, col = "Mortality"))
+```
+
+#With hight penalty factor then the model is underfitting the data, whereas when using a low penalty factor the model gets more overfitting.
+
+#Predicting the model without penalty factor
+
+```{r modelPrediction_with_no_deviance}
+          predictWithoutPenalty <- predict(modelWithNoDeviance, newdata = data)
+          ggplot(data)+geom_line(aes(x = Time, y = data$Mortality, col = "Mortality (Observed)"))+ggtitle("Model with no penalty factor ")+
+            geom_line(aes(x= Time, y = modelPrediction, col = "Mortality (Fitted)"))+ylab("Mortality Rate")
+```
+
+#1.5)
+
+```{r 1.5}
+          ggplot(data) + geom_line(aes(x = Time, y = residuals(res) , col = "Residuals"))+ggtitle("Influenza vs Residuals Given Time")+
+          geom_line(aes(x = Time, y = Influenza, col = "Influenza"))+ylab("Correlation")+xlab("Time")
+``` 
+   
+#As we can see from the plot that the residuals have a correlation with the influenza rate, they increase as the influenza increases.  
+          
+#1.6) 
+
+```{r 1.6, echo=F}
+          gamModelFit = gam(formula =  Mortality~s(Year, k=length(unique(data$Year)))
+                           +s(Week, k=length(unique(data$Week)))
+                           +s(Influenza, k=length(unique(data$Influenza)))
+                           , data =  data)
+          gamModelFitPrediction <- predict(gamModelFit, newdata = data)
+```
+
+```{r 1.6echoed}
+          ggplot(data) + geom_line(aes(x = Time, y = gamModelFitPrediction , col = "Mortality (Fitted)"))+ggtitle("Fitted vs Observed Mortality")+
+            geom_line(aes(x = Time, y = data$Mortality, col = "Mortality (Observed)"))+ylab("Mortality")+xlab("Time")
+```
+
+#From the plot it appears that the model is better than all the previous model.
+
+
+#  Assignment 2. High-dimensional methods  
+
+```{r 2, echo=F}
+#Importing the data from the csv file
+data0=read.csv2("D:/Desktop/Machine Learning/Machine Learning/lab02 block 2/data.csv")
+data=data0
+data=as.data.frame(data)
+data$Conference=as.factor(data$Conference)
+rownames(data)=1:nrow(data)
+
+#Training and testing data
+n=dim(data)[1]
+set.seed(12345)
+id=sample(1:n, floor(n*0.7))
+training=data[id,]
+testing=data[-id,]
+```
+
+#2.1)
+
+```{r 1.1, echo=F, message=FALSE, warning=FALSE}
+library(pamr)
+        x=t(training[,-4703])
+        y=training[[4703]]
+        mydata=list(x=x,y=as.factor(y),geneid=as.character(1:nrow(x)), genenames=rownames(x))
+    
+    #Fitting the model
+        model=pamr.train(mydata)
+    
+    #Cross-validating the penalty
+        cv.fit <- pamr.cv(model, mydata)
+        cv.fit$threshold
+        pamr.plotcv(cv.fit)
+```
+
+#Fitting the model with cross validated threshold
+
+```{r 1.2FittingModel, message=FALSE, warning=FALSE}
+        model <- pamr.train(mydata, threshold = cv.fit$threshold[which.min(cv.fit$error)])
+        summary(model)
+```
+
+#Plotting the centroid
+
+```{r plottingCentroid, echo=F}
+          pamr.plotcen(model, mydata, threshold=cv.fit$threshold[which.min(cv.fit$error)])
+          
+```
+
+#Listing the most significant 10 genes:
+```{r genesListing, echo=F, message=FALSE, warning=FALSE, eval=F}
+          cvMin <- cv.fit$threshold[which.min(cv.fit$error)]
+          a<-pamr.listgenes(model,mydata,threshold=cvMin)
+          cat(paste(colnames(data)[as.numeric(a[1:10,1])],collapse='\n'))
+```
+#231 features are selected by the model using CV method.
+
+#The top ten features are:
+#papers  
+#important  
+#submission  
+#due  
+#published  
+#position  
+#call  
+#conference  
+#dates  
+#candidates  
+#All ten features selected are reasonable to contribute to deciding whether or not the email is a conference email.
+
+#Test Error:
+```{r test_error, echo=F}
+testingTranspose <- t(testing[,-4703])
+predictModelTest <- pamr.predict(model,newx = testingTranspose, threshold =cv.fit$threshold[which.min(cv.fit$error)], type = "class")
+summed <- table(testing[,4703], predictModelTest)
+
+errorValue <- 1-sum(diag(summed))/sum(summed)
+errorValue
+```
+#2.2) 
+  #a)
+```{r 2.2, echo=F, message=FALSE, warning=FALSE}
+library(glmnet)
+          x2 <- as.matrix(training[,-4703])
+          x3 <- as.matrix(testing[,-4703])
+          yt <- as.matrix(testing[,4703])
+          y <- as.matrix(training[,4703])
+          elasticModel <- glmnet(x2, y, alpha = 0.5, family = "binomial")
+          plot(elasticModel)
+          #Calculating the penalty by corss-validation
+          set.seed(12345)
+          cv <- cv.glmnet(x2, y = y, alpha = 0.5,family = "binomial")
+          plot(cv)
+          #Fitting the model with the minimum cross-validated penalty
+          elasticModel <- glmnet(x2, y, alpha = 0.5, lambda = cv$lambda.min, family = "binomial")
+      
+          
+        
+          elasticPredictTesting <- predict(elasticModel, x3, type = "class")
+          elasticCM <- table(elasticPredictTesting, testing$Conference) 
+          
+          elasticError <- 1-sum(diag(elasticCM))/sum(elasticCM)
+```
+
+#Elastic model error is: 
+```{r , echo=F}
+elasticError
+```
+   
+#The contributing features to the model are: 
+```{r 2.2bc, echo=F}
+
+          #The contributing features are:
+          featuresMatrix <- as.matrix(coef(elasticModel))
+          k <- arrayInd(which((featuresMatrix>0) | (featuresMatrix<0)),dim(featuresMatrix))
+          contributingFeature1 <- rownames(featuresMatrix)[k[-1,1]]
+          totalFeaturesNo <- length(contributingFeature1)
+          contributingFeature1
+          totalFeaturesNo
+```
+
+#b)Error rate and features for the kernel model
+
+```{r 2.b, echo=F, message=FALSE, warning=FALSE}
+library(kernlab)
+          kernfit <- ksvm(Conference~., training, kernel = "vanilladot", scale = FALSE)
+          kernfitPredict <- predict(kernfit,newdata=training)
+          kernfitPredictTest <- predict(kernfit,newdata=testing, type="response")
+          
+          # Making the Confusion Matrix 
+          cm = table(kernfitPredict, training$Conference)
+          cmTest = table(kernfitPredictTest, testing$Conference)
+          errorKernal <- 1-sum(diag(cmTest)/sum(cmTest))
+```
+
+
+#Testing error is:
+```{r kernal_error_rate, echo=F}
+         errorKernal
+```          
+          
+          
+#The number of features for the kernel model is:
+```{r kernel_features}
+library(knitr)
+              featuresMatrixKernel <- coef(kernfit)
+              length(featuresMatrixKernel[[1]])
+              
+comparativeDataFrame <- data.frame(Model = c("Centroid","Elastic", "SVM"), Features =c(231,38,43), Error = c(0.1,0.1,0.05))
+
+kable(comparativeDataFrame, caption="Comparison Table")          
+```
+
+
+#SVM selects more features than Elastic and less than Centroid, however, it has the lowest missclassification rate of 0.05. SVM could be considered as best.
+
+#2.3) The number of features to be rejected:
+
+```{r pValues, echo=F}
+#computing the p-value
+          pValues <- c()
+          limit <- ncol(data)-1
+          for(feature in 1:limit){
+            x <- data[,feature]
+            y <- data[,4703]
+            z <- t.test(as.matrix(x)~y, data = data, alternative = "two.sided")
+            pValues <- c(pValues, z$p.value)
+          }
+```
+
+```{r p_value_ordered, echo=F}
+#Ordered p values
+          pValueDf <- data.frame("pvalue" = pValues, "Index" = 1:length(pValues))
+          orederdPvalues <- pValueDf[order(pValueDf$pvalue),]
+      
+      significantBhFeatures <- matrix(ncol = 2,nrow = nrow(orederdPvalues))
+      dfnames <- c("feature","index")
+      colnames(significantBhFeatures)<- dfnames
+          
+#Benjamini and Hochberg FDR
+          for(j in 1:nrow(orederdPvalues)){
+            x <- (j/nrow(orederdPvalues))*0.05
+            if (orederdPvalues[j,"pvalue"]<=x){
+              significantBhFeatures[j,1] <- orederdPvalues[j,"pvalue"]
+              significantBhFeatures[j,2] <- orederdPvalues[j,"Index"]
+            }
+          }
+      maximumJ <- which.max(significantBhFeatures[,1])
+      maximumJ
+     
+```
+
+
+#After calculating the p-values for all the features, ordering all unadjusted p-values, and finding the highest rank j for which the p-value (pj) is less than or equal (j/m)*alpha. We reject all the hypotheses for which pj <= p(L), that are 39 hypotheses.  The 39 features are:  
+
+```{r listing_features_bh, echo=F}
+ colnames(data)[significantBhFeatures[1:39,"index"]]
+
+```
+
+
+
+# Code Appendix
+
+```{r ref.label=knitr::all_labels(), eval = FALSE}
+```
