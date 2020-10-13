@@ -1,0 +1,448 @@
+---
+title: "Block 1, Lab 2 Report"
+author: "Mohammed Bakheet"
+date: "12/07/2019"
+output: pdf_document
+---
+```{r, echo=FALSE, warning=FALSE}
+packages <- c("ggplot2", "plotly","readxl","tree", "MASS", "e1071", "boot", "fastICA")
+options(tinytex.verbose = TRUE)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+packages <- c("ggplot2", "plotly","readxl","tree", "MASS", "e1071", "boot", "fastICA")
+options(tinytex.verbose = TRUE)
+```
+# Assignment 2. Analysis of credit scoring
+```{r 1, echo=FALSE}
+library(tree)
+#1)Importing Data
+data <- readxl::read_excel("D:/Desktop/Machine Learning/Machine Learning/lab02 block 1/creditscoring.xls")
+data$good_bad <- as.factor(data$good_bad)
+
+#Dividing into training, validation, testing
+n=dim(data)[1]
+set.seed(12345)
+id=sample(1:n, floor(n*0.5))
+train=data[id,]
+remaining=data[-id,]
+s=dim(remaining)[1]
+validationId = sample(1:s, floor(s*0.5))
+validationData = remaining[validationId,]
+testingData = remaining[-validationId,]
+
+#2) Fitting the data into the tree model with Gini and deviance measurments
+
+treeModelDeviance <- tree(good_bad ~.,data = train,split = "deviance")
+```
+
+```{r summary2.1}
+summary(treeModelDeviance)
+plot(treeModelDeviance)
+text(treeModelDeviance,pretty = 0)
+```
+
+#Missclassification error rate for gini index model is 0.2368, whereas the missclassification rate for the model when using deviance is 0.2105  
+
+```{r 2.1, echo=FALSE}
+library(e1071)
+treeModelGini <- tree(good_bad ~.,data = train,split = "gini")
+```
+```{r summaryGini}
+summary(treeModelGini)
+plot(treeModelGini, type = "uniform")
+#text(treeModelGini,pretty = 0)
+```
+
+```{r prediction2.1, echo=F}
+#Predicting for validation and testing data for deviance measurement
+treePredTraining = predict(treeModelDeviance, newdata = train, type="class")
+treePredValid = predict(treeModelDeviance, newdata = validationData, type="class")
+treePredTest = predict(treeModelDeviance, newdata = testingData, type="class")
+
+```
+
+```{r prediction2.1echoed}
+#Missclassification rate for training data for deviance
+print(1 - mean(treePredTraining == train$good_bad))
+table(treePredTraining,train$good_bad)
+
+#Missclassification rate for validation data for deviance
+print(1 - mean(treePredValid == validationData$good_bad))
+table(treePredTest,validationData$good_bad)
+
+#Missclassification rate for the testing data for deviance
+print(1 - mean(treePredTest == testingData$good_bad))
+table(treePredTest,testingData$good_bad)
+```
+
+```{r prediction, echo=F}
+#Predicting for validation and testing data for gini measurement
+treePredTrainingG = predict(treeModelGini, newdata = train, type="class")
+treePredValidG = predict(treeModelGini, newdata = validationData, type="class")
+treePredTestG = predict(treeModelGini, newdata = testingData, type="class")
+```
+```{r misclassificationGini}
+#Missclassification rate for training data for Gini measurment
+print(1 - mean(treePredTrainingG == train$good_bad))
+table(treePredTrainingG,train$good_bad)
+
+#Missclassification rate for validation data for Gini measurment
+print(1 - mean(treePredValidG == validationData$good_bad))
+table(treePredValidG,validationData$good_bad)
+
+#Missclassification rate for the testing data for Ginin measurment
+print(1 - mean(treePredTestG == testingData$good_bad))
+table(treePredTestG,testingData$good_bad)
+
+```
+
+```{r theOptimalTree, echo=F}
+#3) Finding the optimal tree by using training and validation datasets
+treeModelBest <- tree(good_bad ~.,data = train)
+trainScore=rep(0,9)
+testScore=rep(0,9)
+for(i in 2:9) {
+  prunedTree=prune.tree(treeModelBest,best=i)
+  pred=predict(prunedTree, newdata=validationData, type="tree")
+  trainScore[i]=deviance(prunedTree)
+  testScore[i]=deviance(pred)
+}
+plot(2:9, trainScore[2:9], type="b", col="red", ylim=c(0,700), main = "Training and Testing Scores")
+points(2:9, testScore[2:9], type="b", col="blue")
+#As the number of leaves increases the training and testing scores both decreases.
+
+#The optimal tree is when the number of leaves is equal to four
+finalTree=prune.tree(treeModelBest, best=4)
+summary(finalTree)
+plot(finalTree, main = "Best Tree")
+text(finalTree,pretty = 0)
+#The tree goes to the left side in one direction, the depth in the right direction is
+#only one, whereas in the left direction it's three.
+
+#Variables actually used in tree construction are:
+#"savings"  "duration" "history" 
+
+#Number of terminal nodes:  4 
+#Misclassification error rate: 0.251
+
+Yfit=predict(finalTree, newdata=validationData, type="class")
+
+#Confusion matrix for the optimal tree
+table(validationData$good_bad,Yfit)
+
+#Missclassification rate for the optimal tree
+print(1 - mean(Yfit == validationData$good_bad))
+
+#The missclassification rate for the test data is: 0.26
+YfitTest=predict(finalTree, newdata=testingData, type="class")
+table(testingData$good_bad,YfitTest)
+print(1 - mean(YfitTest == testingData$good_bad))
+
+
+#4) Training data for classification using Naive Bayes
+
+naiveModel <- naiveBayes(good_bad~., data=train)
+summary(naiveModel)
+YfitNaiveTrain=predict(naiveModel, newdata=train, type = "class")
+YfitNaiveTest=predict(naiveModel, newdata=testingData, type = "class")
+
+#Confusion matrix for the training data
+table(YfitNaiveTrain,train$good_bad)
+
+#Missclassification for the training data (0.3)
+print(1 - mean(YfitNaiveTrain == train$good_bad))
+
+#Confusion matrix for the testing data
+table(YfitNaiveTest,testingData$good_bad)    
+
+#Missclassification for the test data (0.32)
+print(1 - mean(YfitNaiveTest == testingData$good_bad))
+
+#Comparing this result with the result from step 3, the missclassification rate is higher
+#when using Naive Bayes at 0.32, whereas when using the optimal dicision tree the missclassiciation
+#rate is 0.26
+
+
+#5) The optimal tree and Naive Bayes 
+
+set.seed(12345)
+naiveModelFactored <- naiveBayes(good_bad~., data=train)
+piValue <- seq(from = 0.05, to = 0.95, by = 0.05)
+
+treeTPR <- c()
+naiveTPR <- c()
+naiveFPR <- c()
+treeFPR <- c()
+for(i in piValue){
+  naive.probs <- predict(naiveModelFactored, newdata = testingData, type = "raw")
+  optimal.probs <- predict(finalTree, newdata = testingData)
+  
+  naive.pred <- ifelse(naive.probs[,2] > i, 1, 0)
+  naiveConfusion <- table(testingData$good_bad, naive.pred)
+  
+  optimal.tree.pred <- ifelse(optimal.probs[,2] > i,1,0)
+  optimalConfusion <- table(testingData$good_bad,optimal.tree.pred)
+  
+  #Calculating naive TPR & FPR
+  naiveTPR <- cbind(naiveTPR,naiveConfusion[1,1]/sum(naiveConfusion[1,]) )
+  naiveFPR <- cbind(naiveFPR,naiveConfusion[2,1]/sum(naiveConfusion[2,]))
+  
+  #Calculating tree TPR & FPR
+  treeTPR <- cbind(treeTPR,optimalConfusion[1,1]/sum(optimalConfusion[1,]) )
+  treeFPR <- cbind(treeFPR,optimalConfusion[2,1]/sum(optimalConfusion[2,]) ) 
+}
+
+#Plotting TPR & FPR for tree model
+plot(as.numeric(treeTPR), as.numeric(treeFPR), main = "Tree TPR & FRP")
+#Plotting TPR & FPR for naive model
+plot(naiveTPR, naiveFPR, main = "Naive TPR & FPR")
+```
+
+#The tree model did very well, by looking at the values of true positive and false positive, The true positive rates are very high (sometimes all values are predicted correctly), and  the same is correct for false positive rates. Whereas, in the naive bayes model the values of true positive and false positive rates increase as we increase the value of Pi.
+
+
+#6)loss matrix
+```{r lossmatrix}
+
+lossModel <- naiveBayes(good_bad~., train)
+
+lossModelPred <- predict(lossModel, newdata = train, type = "raw")
+condPrediction <- ifelse(lossModelPred[,2] > 0.1, "good", "bad")
+
+#Confusion matrix for the training data
+table(train$good_bad, condPrediction)
+
+#Missclassification rate for the training data
+lossMisClassification <- 1-mean(train$good_bad == condPrediction)
+lossMisClassification
+
+lossModelTest <- naiveBayes(good_bad~., train)
+lossModelTesting <- predict(lossModelTest, newdata = testingData, type = "raw")
+condPredTesting <- ifelse(lossModelTesting[,2] > .1, "1", "0")
+
+#Confusion matrix for the testing data
+table(testingData$good_bad, condPredTesting)
+
+#Missclassification rate for the testing data
+lossMisClassificationTest <- 1-mean(testingData$good_bad == condPredTesting)
+lossMisClassificationTest
+
+
+
+```
+
+# Assignment 3. Uncertainty estimation
+
+```{r 3, echo=F}
+library(ggplot2)
+library(boot)
+data <- read.csv2("D:/Desktop/Machine Learning/Machine Learning/lab02 block 1/State.csv")
+data2=data[order(data$MET),]
+# dev.off()
+```
+
+```{r METvsEX}
+ggplot(data2,aes(x=EX,y =MET )) +geom_point() +geom_smooth(method = "lm")+ggtitle("MET vs EX")
+```
+```{r regressionTreeModel, echo=F}
+#3.2) Regression tree model
+      
+      #Fitting the regression tree model with minimize 8 leaves, and plotting the tree
+      setup<-tree.control(nrow(data2), minsize = 8)
+      regTreeModel=tree(EX~MET, data2, control = setup)
+```
+
+```{r regressionTree, warning=FALSE}
+#3.2) Regression tree model
+      plot(regTreeModel)
+      text(regTreeModel, pretty = 0)
+      summary(regTreeModel)
+      
+      #applying cross validation for the tree
+      cv.res=cv.tree(regTreeModel)
+      plot(cv.res,main="Size of the tree being pruned")
+      minDeviance <- which.min(cv.res$dev)
+      hist(cv.res$k, main = "Cross Validation Residuals")
+      #minumum number of leaves
+      minLeaves <- cv.res$size[minDeviance]
+      minLeaves
+      #The optimal tree
+      optimalTree=prune.tree(regTreeModel, best=3)
+      plot(optimalTree, main="Optimal Tree")
+      text(optimalTree,pretty = 0, col="blue")
+      #Residuals
+      plot(cv.res$size, cv.res$dev, type="b", col="red")
+      plot(log(cv.res$k), cv.res$dev,type="b", col="red")
+```
+
+#The deviance is least when the number of leaves is equal to three, as for the quality of fit, the deviance is higher when two or one leave, but it's well distributed closed to linearly when using 3,4,5,7, or 8 leaves.
+      
+      
+```{r confidenceBand, echo=F}      
+#3.3) 95% confidence band
+      f=function(data, ind){
+        data1=data[ind,]# extract bootstrap sample
+        confsetup<-tree.control(nrow(data1), minsize = 8)
+        res=tree(EX~MET, data=data1, control = confsetup) #fit linear model
+        #predict values for all Area values from the original data
+        priceP=predict(res,newdata=data2)
+        return(priceP)
+      }
+```
+
+```{r makeaBootstrap}
+      #Make a bootstrap
+      bootResult <- boot(data2,statistic = f,R=1000)
+      plot(bootResult)
+      e=envelope(bootResult) #compute confidence bands
+      summary(e)
+      
+      #Calculating the boot confidence interval
+      bootCi <- boot.ci(boot.out = bootResult, type = "norm")
+      bootCi
+      #Plotting confidence bands
+      confsetup<-tree.control(nrow(data2), minsize = 8)
+      fitPred <- tree(EX~MET, data=data2, control = confsetup)
+      plotPred <- predict(fitPred,data2)
+      #plot cofidence bands
+      plot(data2$MET, data2$EX, pch=21, bg="orange", main = "Confidence bands for non-parametric")
+      points(data2$MET,plotPred,type="l") #plot fitted line
+      points(data2$MET,e$point[2,], type="l", col="blue")
+      points(data2$MET,e$point[1,], type="l", col="blue")
+      points(predict(regTreeModel, newdata=data2), type="b", col="red")
+```
+
+#from the plot it's clear that the band is bumpy, and the model is very good nonetheless, a few data is out of the prediction band.
+
+```{r parametricBootstrapping, echo=F, warning=FALSE}
+
+#3.4) 95% parametric bootstrap
+      treeSetup <- tree.control(nrow(data2), minsize = 8)
+      fitParametric <- tree(EX~MET, data=data2, control = treeSetup)
+      
+      rng=function(data, fitParametric) {
+        data1=data.frame(EX=data$EX, MET=data$MET)
+        n=length(data$EX)
+        #generate new Price
+        data1$EX=rnorm(n,predict(fitParametric, newdata=data1),sd(residuals(fitParametric)))
+        return(data1)
+      }
+      # predict(fitParametric, newdata=data2)
+      f1=function(data1){
+        treeSetupf <- tree.control(nrow(data1), minsize = 8)
+        fitParametricModel <- tree(EX~MET, data=data1, control = treeSetupf) #fit tree model
+        #predict values for all Area values from the original data
+        priceP=predict(fitParametricModel,newdata=data2)
+        return(priceP)
+      }
+      f2 <- function(data1){
+        treeSetupf <- tree.control(nrow(data1), minsize = 8)
+        fitParametricModel <- tree(EX~MET, data=data1, control = treeSetupf) #fit tree model
+        
+        n = length(data1$EX)
+        predictPred <- predict(fitParametricModel, newdata = data2)
+        pred <- rnorm(n,predictPred, sd(residuals(fitParametricModel)))
+        return(pred)
+        
+      }
+
+      resParametric=boot(data2, statistic=f1, R=1000, mle=fitParametric,ran.gen=rng, sim="parametric")
+      resParametricPred=boot(data2, statistic=f2, R=1000, mle=fitParametric,ran.gen=rng, sim="parametric")
+      eParamteric <- envelope(resParametric) #compute confidence bands
+      predParametric <- envelope(resParametricPred) #compute confidence for the prediction
+      
+      #Confidence band for the data
+          #eParamteric
+      
+      #Prediction confidence
+          #predParametric
+      #fitting and plotting the model
+```
+
+```{r plottingParametric, warning=FALSE}
+      plotParametric <- predict(fitParametric,data2)
+      plot(data2$MET, data2$EX, pch=21, bg="orange", main = "Confidence bands for parametric")
+      points(data2$MET,plotParametric,type="l") #plot fitted line
+      points(data2$MET,eParamteric$point[2,], type="l", col="blue")
+      points(data2$MET,eParamteric$point[1,], type="l", col="blue")
+      
+      points(data2$MET,predParametric$point[1,], type="l", col="red")
+      points(data2$MET,predParametric$point[2,], type="l", col="red")
+      
+      points(predict(regTreeModel, newdata=data2), type="b", col="red")
+```
+
+#from the plot it's clear that the band is bumpy, and the model is very good at representing the data, that is to say, all data lies within the prediction confidence bands, When using parametric bootstrapping the model gives a wider confidence interval than the case of non-parametric.
+
+
+# Assignment 4. Principal components
+
+```{r assignment4, echo=F}
+library(fastICA)
+#4.1) standard PCA
+    pcaData <- read.csv2("D:/Desktop/Machine Learning/Machine Learning/lab02 block 1/NIRSpectra.csv")
+    
+    data1=pcaData
+    data1$Viscosity = c()
+    data1$Fat=c()
+    res=prcomp(data1)
+    lambda=res$sdev^2
+    #eigenvalues
+    lambda
+          #proportion of variation
+          sprintf("%2.3f",lambda/sum(lambda)*100)
+          screeplot(res)
+```
+
+#The plot shows that two PCAs should be extracted, and the PCAs that capture at least 99% of the toal variance are PCA1 and PCA2.
+```{r plottingPCA1andPCA2}      
+          U=res$rotation
+          #Plotting PCA1 & PCA2 in the coordinates
+          plot(res$x[,1], res$x[,2], ylim=c(-5,15), main = "PCA1 & PCA1")
+          #According to this plot, there are two unusual diesel fuels on the x axes.
+          head(U)[,1:2]
+
+#4.2) Trace plot
+          plot(U[,1], main="Traceplot, PC1")
+          plot(U[,2],main="Traceplot, PC2")
+```
+
+#For the first PC (PC1), from the plot (Traceplot, PC1) it's clear that the range of data is from 0.08 to 0.110 which is less compared to PCA2. Whereas in PCA2 the range is from 0.0 to 0.3, which is larger compared to PC1, and most of the data is linearly centered arount 0.0
+
+```{r independentComponent, echo=F}          
+#4.3) Independent Component Analysis
+  
+          set.seed(12345)
+          #Fitting fastICA function
+          icaData <- as.matrix(data1)
+          fastIcaResult <- fastICA(icaData, n.comp = 2,
+                                   fun = "logcosh",
+                                   method = "R",
+                                   alpha = 1,
+                                   maxit = 200,
+                                   tol = 0.0001,
+                                   verbose = TRUE)
+          
+          #computing the W
+          w <- fastIcaResult$K %*% fastIcaResult$W
+      
+          #Plotting w as traceplot
+          plot(w[,1], main = "Trace Plot W1")
+          plot(w[,2], main = "Trace Plot W2")
+```
+
+
+#When comparing the second plot (Trace Plot W2), it's clear that PC2 ranges between -1.0 and -0.2 which is almost the same as when using step 2 W is a matrix estimated by the ICA in an attempt to un-mix the data. 
+
+```{r plottingFastICA}
+          plot(fastIcaResult$S[,1],fastIcaResult$S[,2], main = "ICA components")
+          
+          
+```
+
+# Code Appendix
+
+```{r ref.label=knitr::all_labels(), eval = FALSE}
+```
