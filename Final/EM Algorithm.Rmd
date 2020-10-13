@@ -1,0 +1,229 @@
+---
+title: "Block 2 Lab 1 Report"
+author: "Mohammed Bakheet"
+date: "04/12/2019"
+output: pdf_document
+---
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+packages <- c("ggplot2", "plotly","readxl","kknn")
+options(tinytex.verbose = TRUE)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+packages <- c("ggplot2", "plotly","readxl","kknn")
+options(tinytex.verbose = TRUE)
+RNGversion("3.5.1")
+```
+
+
+## First Task (ENSEMBLE METHODS)  
+
+In this task the performance of Adaboost classification trees and random forests are evaluated on the spam data. Plots showing Adaboost and random forests errors rates are also provided.  
+
+```{r first_task, echo=FALSE, message=FALSE, warning=FALSE}
+library(mboost)
+library(randomForest)
+
+#Importing data from csv file
+sp <- read.csv2("D:/Desktop/Machine Learning/Machine Learning/lab02/spambase.csv")
+sp$Spam <- as.factor(sp$Spam)
+
+#Dividing data into training and testing
+n=dim(sp)[1]
+set.seed(12345)
+id=sample(1:n, floor(n*0.75))
+train=sp[id,]
+test=sp[-id,]
+trainSequence <- seq(from = 10, to = 100, by = 10)
+
+#-----------------------------------------------------------------------
+adaboostResult <- sapply(trainSequence,FUN = function(i){
+  adaBoostModel <- blackboost(Spam ~ .,
+                              data = train,
+                              control = boost_control(mstop = i),
+                              family = Binomial(type="adaboost"))
+  modelTrainingAccuracy <- predict(adaBoostModel, train)
+  modelTestingAccuracy <- predict(adaBoostModel,test, type = "class")
+  c(length(which(modelTestingAccuracy != test$Spam))/length(test$Spam),i)
+})
+plot(adaboostResult[2,],adaboostResult[1,], xlab = "Number of Trees", ylab = "Error Rate", type = "l", col = "Blue")+title("Adaboost Algorithm")
+```
+
+#The error rate is highest when using 10 trees and it decreases as we use more trees.
+
+```{r first_task_two,echo=FALSE}
+#------------------------------------------------------------------------
+
+#Calculating for randomForest
+randomforestResult <- sapply(trainSequence, function(i){
+randomForestModel <- randomForest(Spam ~., data = train, ntree = i)
+randomforestTrainingAccuracy <- predict(randomForestModel, train)
+randomforestTestingAccuracy <- predict(randomForestModel,test, type = "class")
+c(length(which(randomforestTestingAccuracy != test$Spam))/length(test$Spam),i)
+})
+plot(randomforestResult[2,],randomforestResult[1,], xlab = "Number of Trees", ylab = "Error Rate", type = "l", col = "Blue")+ title("RandomForest Algorithm")
+
+```
+
+#In case of randomForest, the error rate is also highest when using 10 trees and it also decreases when using more trees.  
+
+```{r plotting_two_errors,echo=F}
+library(reshape2)
+library(ggplot2)
+adaForest <- data.frame(randomError =randomforestResult[1,], adaError = adaboostResult[1,], trees = randomforestResult[2,])
+dd = melt(adaForest, id=c("trees"))
+
+ggplot(dd) + geom_line(aes(x=trees, y=value, colour=variable)) +
+  scale_colour_manual(values=c("red","blue"))
+#https://stackoverflow.com/questions/10349206/add-legend-to-ggplot2-line-plot
+```
+
+#When comparing the error rate for Random Forest and Adaboost, it's clear from the plot that Random Forests always give a lower value of error than Adaboost.
+
+
+## Second Task (EM Algorithm)   
+
+```{r second_task,echo=FALSE}
+em <- function(k_){
+set.seed(1234567890)
+max_it <- 100 # max number of EM iterations
+min_change <- 0.1 # min change in log likelihood between two consecutive EM iterations
+N=1000 # number of training points
+D=10 # number of dimensions
+x <- matrix(nrow=N, ncol=D) # training data
+true_pi <- vector(length = 3) # true mixing coefficients
+true_mu <- matrix(nrow=3, ncol=D) # true conditional distributions
+true_pi=c(1/3, 1/3, 1/3)
+true_mu[1,]=c(0.5,0.6,0.4,0.7,0.3,0.8,0.2,0.9,0.1,1)
+true_mu[2,]=c(0.5,0.4,0.6,0.3,0.7,0.2,0.8,0.1,0.9,0)
+true_mu[3,]=c(0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5)
+plot(true_mu[1,], type="o", col="blue", ylim=c(0,1))
+points(true_mu[2,], type="o", col="red")
+points(true_mu[3,], type="o", col="green")
+
+# Producing the training data
+for(n in 1:N) {
+  k <- sample(1:3,1,prob=true_pi)
+  for(d in 1:D) {
+    x[n,d] <- rbinom(1,1,true_mu[k,d])
+  }
+}
+K=k_ # number of guessed components
+z <- matrix(nrow=N, ncol=K) # summal component assignments
+pi <- vector(length = K) # mixing coefficients
+mu <- matrix(nrow=K, ncol=D) # conditional distributions
+llik <- vector(length = max_it) # log likelihood of the EM iterations
+# Random initialization of the paramters
+pi <- runif(K,0.49,0.51)
+pi <- pi / sum(pi)
+for(k in 1:K){
+  mu[k,] <- runif(D,0.49,0.51)
+}
+pi
+mu
+for(it in 1:max_it) {
+  Sys.sleep(0.5)
+  # E-step: Computation of the summal component assignments
+  #Calculating the probabilities
+  for (n in 1:N) {
+    summ = c()
+    for (k in 1:K) {
+      probability <- prod((mu[k,]^x[n,]) ,((1-mu[k,])^(1-x[n,])))
+      summ = c(summ, probability)
+    }
+    
+    z[n,] = pi*summ/sum(pi*summ)
+  }
+  # Your code here
+  #Log likelihood computation.
+  #Looping through components to calculate the log likelihood
+    total = matrix(nrow = N, ncol = K)
+    llik[it] = 0
+  sapply(1:N, function(c){
+    #Looping through dimensions
+    sapply(1:K, function(d,c){
+      total[c,d] <<- pi[d]*prod(((mu[d,]^x[c,])*((1-mu[d,])^(1-x[c,]))))
+    },c=c)
+    })
+  llik[it]<- sum(log(rowSums(total)))
+  
+  # Your code here
+  cat("iteration: ", it, "log likelihood: ", llik[it], "\n")
+  flush.console()
+  # Stop if the lok likelihood has not changed significantly
+  if(it > 1){
+    if(abs(llik[it]-llik[it-1]) < min_change){
+      break
+    }
+    }
+  # Your code here
+  #M-step: ML parameter estimation from the data and summal component assignments
+  # Your code here
+  zcol = colSums(z)
+  pi =zcol/N
+  
+#updating mu
+  for (k in 1:K) {
+    for (i in 1:D) {
+      mu[k,i] <- sum(z[,k]*x[,i])/sum(z[,k])
+    }
+  }
+}
+pi
+mu
+plot(llik[1:it], type="o")
+K <- as.character(K)
+switch (K,
+  "2"={print("co 2")
+    plot(mu[1,], type="o", col="blue", ylim=c(0,1))
+      points(mu[2,], type="o", col="red")},
+  "3" = {print("co 3")
+    plot(mu[1,], type="o", col="blue", ylim=c(0,1))
+      points(mu[2,], type="o", col="red")
+      points(mu[3,], type="o", col="green")},
+  "4" = {print("co 4")
+    plot(mu[1,], type="o", col="blue", ylim=c(0,1))
+      points(mu[2,], type="o", col="red")
+      points(mu[3,], type="o", col="green")
+      points(mu[4,], type="o", col="yellow")}
+)
+}
+
+```
+
+## When K=2  
+
+```{r k2, echo=F}
+em(2)
+```
+
+##  When K=3  
+
+```{r k3, echo=F}
+em(3)
+```
+
+##  When K=4  
+
+```{r k4, echo=F}
+em(4)
+```
+
+#The EM algorithm takes the value ot two,three, and four componenst and calculates the Bernoulli probability and the maximum likelihood, in addition to the log liklihood, until the change is less than 0.001. In each iteration the conversion rate decreases as the algorithm tries to make better classification to the points included in the matrix.  
+When we have three components, the mu is closest to the true mu.  
+
+# Code Appendix  
+
+
+```{r ref.label=knitr::all_labels(), eval = FALSE}
+```
+
+## References:  
+
+https://stats.stackexchange.com  
+https://stackoverflow.com
